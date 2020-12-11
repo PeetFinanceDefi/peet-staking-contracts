@@ -100,7 +100,7 @@ contract PeetStakingContract {
 
         PoolWallet storage wallet = pool._wallets[addr];
         uint256 amountInPool = 0;
-        for (uint256 i = 0; i < wallet.index; i++) {
+        for (uint256 i = 0; i < wallet.input_asset_amount.length; i++) {
             amountInPool += wallet.input_asset_amount[i];
         }
         return amountInPool;
@@ -115,6 +115,11 @@ contract PeetStakingContract {
         uint256 totalWalletPooled = getTotalWalletPoolAmount(indice, address(msg.sender)).add(amount);
         uint256 totalPoolInputAsset = pool.total_amount_input_pooled.add(amount);
 
+        require(
+            block.timestamp < pool.start_date,
+            "Pool already started, you cant stake in this one!"
+        );
+        
         require(
             totalPoolInputAsset <= pool.funds_pool.max_total_participation,
             "Max pool cap already reached, you cant join this pool"
@@ -136,9 +141,8 @@ contract PeetStakingContract {
         );
 
         PoolWallet storage wallet = pool._wallets[address(msg.sender)];
-        wallet.input_asset_amount[wallet.index] = amount;
-        wallet.start_date_pooled[wallet.index] = block.timestamp;
-        wallet.index += 1;
+        wallet.input_asset_amount.push(amount);
+        wallet.start_date_pooled.push(block.timestamp);
 
         pool.total_amount_input_pooled.add(amount);
     }

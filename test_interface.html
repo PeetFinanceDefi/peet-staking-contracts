@@ -1,0 +1,130 @@
+<html>
+
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.3.0/web3.min.js" integrity="sha512-ppuvbiAokEJLjOUQ24YmpP7tTaLRgzliuldPRZ01ul6MhRC+B8LzcVkXmUsDee7ne9chUfApa9/pWrIZ3rwTFQ==" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js" integrity="sha512-qTXRIMyZIFb8iQcfjXWCO8+M5Tbc38Qi5WzdPOYZHIlZpzBHG3L3by84BBBOiRGiEb7KKtAOAs5qYdUiZiQNNQ==" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.js" integrity="sha256-QWo7LDvxbWT2tbbQ97B53yJnYU3WhH/C8ycbRAkjPDc=" crossorigin="anonymous"></script>
+  </head>
+
+<body>
+    <input type="button" value="New Pool" onclick="javascript: newPool();" />
+
+    <input type="button" value="Pool Deposit" onclick="javascript: depositInPool();" />
+
+    <input type="button" value="Fetch Pools" onclick="javascript: fetchPools();" />
+      
+    <input type="button" value="Approve PTE Staking Contract" onclick="javascript: approvePteToStaking();" />
+
+    <input type="button" value="Get Amount in Pool" onclick="javascript: getTotalAmountInPool();" />
+    <script>
+      
+      const STAKING_CONTRACT = "0x1B418da13410301A664b171dD4e143F6CCa92129";
+      const STAKING_POOL = "0xc9ab196f974f811a8f3152d98e6b5c4742f9d49c9a561ec032c69dbf4dfc0db8"
+
+        async function fetchContractPteStaking() {
+          return new Promise((res, rej) => {
+            $.getJSON( "./PeetStakingContract.json", (data) => {
+              res(data)
+          });
+          })
+        }
+
+        async function fetchPteContract() {
+          return new Promise((res, rej) => {
+            $.getJSON( "./pte.json", (data) => {
+              res(data)
+          });
+          })
+        }
+
+        (async () => {
+
+            var json = await fetchContractPteStaking()
+            var jsonPte = await fetchPteContract()
+            await window.ethereum.enable();
+            const web3 = new Web3(window.ethereum)
+            const contract = new web3.eth.Contract(json.abi, STAKING_CONTRACT);
+            const pteContract = new web3.eth.Contract(jsonPte.abi, "0x2158146E3012f671e4E3EEE72611224027c3FcFD");
+
+            const newPool = async () => {
+            
+                web3.eth.getAccounts(async (error, accounts) => {
+                  let startDate = (new Date()).getTime() / 1000;
+                  let endDate = moment(new Date().toISOString()).add(1, 'months').toDate().getTime() / 1000;
+
+                  // console.log(startDate.toFixed(0))
+                  // console.log(endDate.toFixed(0))
+
+                    const indicePool = await contract.methods.publishPool(
+                      web3.utils.fromAscii("PTE - WETH Pool"),
+                      "0x2158146e3012f671e4e3eee72611224027c3fcfd",
+                      "0xc778417e063141139fce010982780140aa0cd5ab",
+                      startDate.toFixed(0),
+                      endDate.toFixed(0),
+                      true,
+                      (2.25 * (10 ** 18)).toFixed(0), // roi
+                      (0).toFixed(0),
+                      (5 * (10 ** 18)).toFixed(0),
+                      (50 * (10 ** 18)).toFixed(0),
+                    ).send({from: accounts[0]});
+
+                    console.log(`New pool created`)
+                    console.log(indicePool)
+                });
+            }
+            window.newPool = newPool;
+
+
+            const fetchPools = async () => {
+              const pools = await contract.methods.fetchLivePools().call()
+              console.log(pools)
+            }
+
+            window.fetchPools = fetchPools;
+
+
+            const approvePteToStaking = async () => {
+
+              web3.eth.getAccounts(async (error, accounts) => {
+                var amount = web3.utils.toWei((1000).toFixed(0), "ether")
+                const result = await pteContract.methods.approve(STAKING_CONTRACT, amount).send({from: accounts[0]})
+                console.log(result)
+              })
+            }
+            window.approvePteToStaking = approvePteToStaking;
+
+            
+            const getTotalAmountInPool = async () => {
+              web3.eth.getAccounts(async (error, accounts) => {
+                const result = await contract.methods.getTotalWalletPoolAmount(STAKING_POOL, accounts[0]).call({from: accounts[0]})
+                var amount = web3.utils.fromWei(result, "ether")
+
+                console.log(`Amount in pool ${STAKING_POOL} for: ${accounts[0]} ${amount} PTE`)
+              })
+            }
+            window.getTotalAmountInPool = getTotalAmountInPool;
+
+            const depositInPool = async () => {
+            
+            web3.eth.getAccounts(async (error, accounts) => {
+
+              // console.log(startDate.toFixed(0))
+              // console.log(endDate.toFixed(0))
+
+                const deposit = await contract.methods.depositInPool(
+                STAKING_POOL,
+                (5 * (10 ** 18)).toFixed(0)
+                ).send({from: accounts[0]});
+
+                console.log(`New deposit success`)
+                console.log(deposit)
+            });
+        }
+
+          window.depositInPool = depositInPool;
+        })();
+
+    </script>
+</body>
+
+</html>
