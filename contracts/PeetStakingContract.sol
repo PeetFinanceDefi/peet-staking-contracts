@@ -23,6 +23,7 @@ contract PeetStakingContract {
     }
 
     event LogNewPublishedPool(
+        bytes32 pool_indice,
         bytes32 pool_name,
         bool state,
         uint256 roi,
@@ -32,6 +33,7 @@ contract PeetStakingContract {
     );
 
    event LogUpdatedPublishedPool(
+        bytes32 pool_indice,
         bytes32 pool_name,
         bool state,
         uint256 roi,
@@ -50,6 +52,7 @@ contract PeetStakingContract {
     
         // emit disabled pool event
         emit LogUpdatedPublishedPool(
+            pool.pool_indice,
             pool.pool_name,
             pool.pool_active,
             pool.rewards_pool.roi_percent,
@@ -64,6 +67,7 @@ contract PeetStakingContract {
 
         // emit enabled pool event
         emit LogNewPublishedPool(
+            pool.pool_indice,
             pool.pool_name,
             pool.pool_active,
             pool.rewards_pool.roi_percent,
@@ -83,29 +87,87 @@ contract PeetStakingContract {
         }
     }
 
+    function fetchPoolByIndice(bytes32 indice) private view returns(PoolStructure storage) {
+        return _pools[indice];
+    }
+
+    function getTotalWalletPoolAmount (bytes32 indice, address addr) public view returns(uint256) {
+        PoolStructure storage pool = fetchPoolByIndice(indice);
+        require(
+            pool.pool_active == true,
+            "Pool selected isn't active"
+        );
+
+        PoolWallet storage wallet = pool._wallets[addr];
+        uint256 amountInPool = 0;
+        for (uint256 i = 0; i < wallet.index; i++) {
+            amountInPool += wallet.input_asset_amount[i];
+        }
+        return amountInPool;
+    }
+
+    function depositInPool(bytes32 indice, uint256 amount) public {
+        PoolStructure storage pool = fetchPoolByIndice(indice);
+        require(
+            pool.pool_active == true,
+            "Pool selected isn't active"
+        );
+        uint256 totalWalletPooled = getTotalWalletPoolAmount(indice, address(msg.sender)).add(amount);
+        uint256 totalPoolInputAsset = pool.total_amount_input_pooled.add(amount);
+
+        require(
+            totalPoolInputAsset <= pool.funds_pool.max_total_participation,
+            "Max pool cap already reached, you cant join this pool"
+        );
+
+        require(
+            totalWalletPooled <= pool.funds_pool.max_wallet_participation,
+            "Max wallet amount reached for this pool"
+        );
+
+        IERC20 input_token = IERC20(address(pool.input_asset));
+        require(
+            input_token.balanceOf(address(msg.sender)) >= amount,
+            "Invalid funds to deposit in pools"
+        );
+        require(
+            input_token.transferFrom(msg.sender, address(this), amount) == true,
+            "Error transferFrom on the contract"
+        );
+
+        PoolWallet storage wallet = pool._wallets[address(msg.sender)];
+        wallet.input_asset_amount[wallet.index] = amount;
+        wallet.start_date_pooled[wallet.index] = block.timestamp;
+        wallet.index += 1;
+
+        pool.total_amount_input_pooled.add(amount);
+    }
+
     function publishPool(bytes32 name, address in_asset,
         address out_asset, uint256 start_date, uint256 end_date,
-        bool state_pool, bool auto_renew, uint256 roi, uint256 hodl_mode_bonus,
-        uint hodl_mode_period, uint256 max_reward, uint max_wallet, uint max_total) public returns(bytes32) {
+        bool state_pool, uint256 roi, uint256 max_reward, uint max_wallet, uint max_total) public returns(bytes32) {
         
+        require(
+            msg.sender == _poolManager,
+            "Not authorized to publish a new pool"
+        );
+
         bytes32 pool_indice = keccak256(abi.encode(name,
           strings.uint2str(start_date), strings.uint2str(end_date)));
 
         // Pool base structure
         PoolStructure storage new_pool = _pools[pool_indice];
+        new_pool.pool_indice = pool_indice;
         new_pool.pool_name = name;
         new_pool.input_asset = in_asset;
         new_pool.output_asset = out_asset;
         new_pool.start_date = start_date;
         new_pool.end_date = end_date;
         new_pool.pool_active = state_pool;
-        new_pool.pool_auto_renew = auto_renew;
         
         // Pool Rewards
         PoolRewards memory rewards;
         rewards.roi_percent = roi;
-        rewards.hodl_mode_bonus = hodl_mode_bonus;
-        rewards.hodl_mode_period = hodl_mode_period;
         new_pool.rewards_pool = rewards;
         //
 
@@ -121,8 +183,9 @@ contract PeetStakingContract {
         return pool_indice;
     }
 
-    function fetchLivePools() public view returns(bytes32 [] memory, address [] memory,
+    function fetchLivePools() public view returns(bytes32 [] memory, bytes32 [] memory, address [] memory,
     address [] memory, uint256 [] memory, uint256 [] memory) {
+        bytes32 [] memory indices = new bytes32[](activePoolsIndices.length);
         bytes32 [] memory names = new bytes32[](activePoolsIndices.length);
         address [] memory input_assets = new address[](activePoolsIndices.length);
         address [] memory output_assets = new address[](activePoolsIndices.length);
@@ -130,13 +193,14 @@ contract PeetStakingContract {
         uint256 [] memory ends = new uint256[](activePoolsIndices.length);
 
         for (uint i = 0; i < activePoolsIndices.length; i++) {
+            indices[i] =  _pools[activePoolsIndices[i]].pool_indice;
             names[i] =  _pools[activePoolsIndices[i]].pool_name;
             input_assets[i] = _pools[activePoolsIndices[i]].input_asset;
             output_assets[i] = _pools[activePoolsIndices[i]].output_asset;
             starts[i] = _pools[activePoolsIndices[i]].start_date;
             ends[i] = _pools[activePoolsIndices[i]].end_date;
         }
-        return (names, input_assets,
+        return (indices, names, input_assets,
          output_assets, starts, ends);
     }
     
