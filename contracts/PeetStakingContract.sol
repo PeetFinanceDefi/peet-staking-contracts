@@ -42,6 +42,13 @@ contract PeetStakingContract {
         uint256 endDate
     );
 
+    event RewardReceivedFromPool(
+        bytes32 pool_indice,
+        uint256 amount_reward,
+        address receiver,
+        address output_asset
+    );
+
     function removeActivePoolIndexation(uint index) private {
         if (index >= activePoolsIndices.length) return;
         PoolStructure storage pool = _pools[activePoolsIndices[index]];
@@ -147,13 +154,64 @@ contract PeetStakingContract {
         pool.total_amount_input_pooled.add(amount);
     }
 
-    function calculateAndSendReward(bytes32 indice, address from, uint256 inputAmount) private view returns(uint256) {
+    function calculateAndSendReward(bytes32 indice, address from, uint256 inputAmount) private returns(uint256) {
         PoolStructure storage pool = fetchPoolByIndice(indice);
         uint256 weightPercent = inputAmount.mul(100).div(pool.funds_pool.max_wallet_participation).mul(10);
-        uint256 reward = pool.rewards_pool.amount_reward * weightPercent / 10000;
+        uint256 rewardAmount = pool.rewards_pool.base_amount_reward * weightPercent / 10000;
 
-        //TODO: transfers
-        return reward;
+        IERC20 output_token = IERC20(address(pool.output_asset));
+        require(
+            output_token.balanceOf(address(this)) >= rewardAmount,
+            "Invalid pool contract output funds"
+        );
+        
+        require(
+             output_token.transfer(from, rewardAmount) == true,
+            "Error transfer reward on the contract"
+        );
+
+        pool.rewards_pool.amount_reward -= rewardAmount;
+
+        // emit event received reward
+        emit RewardReceivedFromPool(pool.pool_indice,
+         rewardAmount, from, pool.output_asset);
+
+        return rewardAmount;
+    }
+
+    function withdrawPoolRewardsUnconsumed(bytes32 indice) public {
+         require(
+            msg.sender == _poolManager,
+            "Not authorized to withdraw pool reward funds"
+        );
+
+        PoolStructure storage pool = fetchPoolByIndice(indice);
+        require(
+            pool.rewards_pool.amount_reward > 0,
+            "No amount rewards left in the pool"
+        );
+        
+        require(
+            block.timestamp > pool.end_date,
+            "Pool end date isnt reached yet"
+        );
+        
+        IERC20 output_token = IERC20(address(pool.output_asset));
+        uint256 balanceToken = output_token.balanceOf(address(this));
+        uint256 withdrawalAmount = 0;
+
+        // allow pool manager to retire unconsumed rewards from the total pool cap
+        if (balanceToken < pool.rewards_pool.amount_reward) {
+            withdrawalAmount = balanceToken;
+        } else {
+            withdrawalAmount = pool.rewards_pool.amount_reward;
+        }
+
+        require(
+            output_token.transfer(_poolManager, withdrawalAmount) == true,
+            "Error transfer on the contract"
+        );
+        pool.rewards_pool.amount_reward = 0;
     }
 
     function withdrawFromPool(bytes32 indice) public returns (uint256) {
@@ -179,13 +237,15 @@ contract PeetStakingContract {
             "Error transfer on the contract"
         );
 
+        uint256 rewardAmount = calculateAndSendReward(indice, sender, walletInputAmount);
+
         // we reset the input amount just sent back
         PoolWallet storage wallet = pool._wallets[sender];
         for (uint256 i = 0; i < wallet.input_asset_amount.length; i++) {
             wallet.input_asset_amount[i] = 0;
         }
 
-        return calculateAndSendReward(indice, sender, walletInputAmount);
+        return rewardAmount;
     }
 
     function publishPool(bytes32 name, address in_asset,
@@ -197,11 +257,11 @@ contract PeetStakingContract {
             "Not authorized to publish a new pool"
         );
 
-        // IERC20 _reward_token = IERC20(address(out_asset));
-        // require(
-        //     _reward_token.balanceOf(address(this)) >= amount_reward,
-        //     "Cant create this pool cause output asset rewards funds are too low"
-        // );
+        IERC20 _reward_token = IERC20(address(out_asset));
+        require(
+            _reward_token.balanceOf(address(this)) >= amount_reward,
+            "Cant create this pool cause output asset rewards funds are too low"
+        );
 
         bytes32 pool_indice = keccak256(abi.encode(name,
           strings.uint2str(start_date), strings.uint2str(end_date)));
@@ -218,6 +278,7 @@ contract PeetStakingContract {
         
         // Pool Rewards
         PoolRewards memory rewards;
+        rewards.base_amount_reward = amount_reward;
         rewards.amount_reward = amount_reward;
         new_pool.rewards_pool = rewards;
         //
