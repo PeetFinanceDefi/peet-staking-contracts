@@ -49,14 +49,24 @@ contract PeetStakingContract {
         address output_asset
     );
 
-    function removeActivePoolIndexation(uint index) private {
-        if (index >= activePoolsIndices.length) return;
-        PoolStructure storage pool = _pools[activePoolsIndices[index]];
-
-        for (uint i = index; i < activePoolsIndices.length-1; i++){
-            activePoolsIndices[i] = activePoolsIndices[i+1];
+    function removeActivePoolIndexation(bytes32 indice) private {
+        if (activePoolsIndices.length == 1) {
+            delete activePoolsIndices;
+            return;
         }
-    
+        bytes32[] memory newArray = new bytes32[](activePoolsIndices.length - 1);
+        uint256 new_index = 0;
+
+        for (uint256 i = 0; i < activePoolsIndices.length; i++) {
+            if (_pools[activePoolsIndices[i]].pool_indice != indice) {
+                newArray[new_index++] = activePoolsIndices[i];
+            }
+        }
+        activePoolsIndices = newArray;
+
+        PoolStructure storage pool = _pools[indice];
+        pool.pool_active = false;
+
         // emit disabled pool event
         emit LogUpdatedPublishedPool(
             pool.pool_indice,
@@ -94,18 +104,10 @@ contract PeetStakingContract {
         }
     }
 
-    function fetchPoolByIndice(bytes32 indice) private view returns(PoolStructure storage) {
-        return _pools[indice];
-    }
-
     function getTotalWalletPoolInputAmount (bytes32 indice, address addr) public view returns(uint256) {
-        PoolStructure storage pool = fetchPoolByIndice(indice);
-        require(
-            pool.pool_active == true,
-            "Pool selected isn't active"
-        );
-
+        PoolStructure storage pool = _pools[indice];
         PoolWallet storage wallet = pool._wallets[addr];
+
         uint256 amountInPool = 0;
         for (uint256 i = 0; i < wallet.input_asset_amount.length; i++) {
             amountInPool += wallet.input_asset_amount[i];
@@ -114,7 +116,7 @@ contract PeetStakingContract {
     }
 
     function depositInPool(bytes32 indice, uint256 amount) public {
-        PoolStructure storage pool = fetchPoolByIndice(indice);
+        PoolStructure storage pool = _pools[indice];
         require(
             pool.pool_active == true,
             "Pool selected isn't active"
@@ -155,7 +157,7 @@ contract PeetStakingContract {
     }
 
     function calculateAndSendReward(bytes32 indice, address from, uint256 inputAmount) private returns(uint256) {
-        PoolStructure storage pool = fetchPoolByIndice(indice);
+        PoolStructure storage pool = _pools[indice];
         uint256 weightPercent = inputAmount.mul(100).div(pool.funds_pool.max_wallet_participation).mul(10);
         uint256 rewardAmount = pool.rewards_pool.base_amount_reward * weightPercent / 10000;
 
@@ -179,13 +181,18 @@ contract PeetStakingContract {
         return rewardAmount;
     }
 
+    function leftRewardsInPool(bytes32 indice) public view returns(uint256) {
+        PoolStructure storage pool = _pools[indice];
+        return pool.rewards_pool.amount_reward;
+    }
+
     function withdrawPoolRewardsUnconsumed(bytes32 indice) public {
          require(
             msg.sender == _poolManager,
             "Not authorized to withdraw pool reward funds"
         );
 
-        PoolStructure storage pool = fetchPoolByIndice(indice);
+        PoolStructure storage pool = _pools[indice];
         require(
             pool.rewards_pool.amount_reward > 0,
             "No amount rewards left in the pool"
@@ -215,7 +222,7 @@ contract PeetStakingContract {
     }
 
     function withdrawFromPool(bytes32 indice) public returns (uint256) {
-        PoolStructure storage pool = fetchPoolByIndice(indice);
+        PoolStructure storage pool = _pools[indice];
         require(
             block.timestamp > pool.end_date,
             "Pool end date isnt reached yet"
@@ -236,6 +243,10 @@ contract PeetStakingContract {
             input_token.transfer(msg.sender, walletInputAmount) == true,
             "Error transfer on the contract"
         );
+
+        if (pool.pool_active) {
+            removeActivePoolIndexation(pool.pool_indice);
+        }
 
         uint256 rewardAmount = calculateAndSendReward(indice, sender, walletInputAmount);
 
