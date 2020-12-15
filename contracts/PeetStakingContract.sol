@@ -115,6 +115,20 @@ contract PeetStakingContract {
         return amountInPool;
     }
 
+    function updatePoolState(bytes32 indice, bool state) public {
+        require(
+            msg.sender == _poolManager,
+            "Not authorized to update pool state"
+        );
+        PoolStructure storage pool = _pools[indice];
+        if (state && !pool.pool_active) {
+            enableActivePoolIndexation(indice, pool);
+        } else if (!state && pool.pool_active) {
+            removeActivePoolIndexation(indice);
+        }
+        pool.pool_active = state;
+    }
+
     function depositInPool(bytes32 indice, uint256 amount) public {
         PoolStructure storage pool = _pools[indice];
         require(
@@ -153,7 +167,7 @@ contract PeetStakingContract {
         wallet.input_asset_amount.push(amount);
         wallet.start_date_pooled.push(block.timestamp);
 
-        pool.total_amount_input_pooled.add(amount);
+        pool.total_amount_input_pooled = totalPoolInputAsset;
     }
 
     function calculateAndSendReward(bytes32 indice, address from, uint256 inputAmount) private returns(uint256) {
@@ -305,6 +319,19 @@ contract PeetStakingContract {
         return pool_indice;
     }
 
+    function fetchLivePoolsPlus() public view returns(uint256 [] memory, uint256 [] memory, uint256 [] memory) {
+        uint256 [] memory amount_reward = new uint256[](activePoolsIndices.length);
+        uint256 [] memory total_pooled = new uint256[](activePoolsIndices.length);
+        uint256 [] memory max_pooled = new uint256[](activePoolsIndices.length);
+
+        for (uint i = 0; i < activePoolsIndices.length; i++) {
+            amount_reward[i] = _pools[activePoolsIndices[i]].rewards_pool.base_amount_reward;
+            total_pooled[i] = _pools[activePoolsIndices[i]].total_amount_input_pooled;
+            max_pooled[i] = _pools[activePoolsIndices[i]].funds_pool.max_total_participation;
+        }
+        return (amount_reward, total_pooled, max_pooled);
+    }
+
     function fetchLivePools() public view returns(bytes32 [] memory, bytes32 [] memory, address [] memory,
     address [] memory, uint256 [] memory, uint256 [] memory) {
         bytes32 [] memory indices = new bytes32[](activePoolsIndices.length);
@@ -314,6 +341,7 @@ contract PeetStakingContract {
         uint256 [] memory starts = new uint256[](activePoolsIndices.length);
         uint256 [] memory ends = new uint256[](activePoolsIndices.length);
 
+
         for (uint i = 0; i < activePoolsIndices.length; i++) {
             indices[i] =  _pools[activePoolsIndices[i]].pool_indice;
             names[i] =  _pools[activePoolsIndices[i]].pool_name;
@@ -322,8 +350,29 @@ contract PeetStakingContract {
             starts[i] = _pools[activePoolsIndices[i]].start_date;
             ends[i] = _pools[activePoolsIndices[i]].end_date;
         }
+        return (indices, names, input_assets, 
+        output_assets, starts, ends);
+    }
+    
+    function fetchAllPools() public view returns(bytes32 [] memory, bytes32 [] memory, address [] memory,
+    address [] memory, uint256 [] memory, uint256 [] memory) {
+        bytes32 [] memory indices = new bytes32[](allPoolsIndices.length);
+        bytes32 [] memory names = new bytes32[](allPoolsIndices.length);
+        address [] memory input_assets = new address[](allPoolsIndices.length);
+        address [] memory output_assets = new address[](allPoolsIndices.length);
+        uint256 [] memory starts = new uint256[](allPoolsIndices.length);
+        uint256 [] memory ends = new uint256[](allPoolsIndices.length);
+
+        for (uint i = 0; i < allPoolsIndices.length; i++) {
+            indices[i] =  _pools[allPoolsIndices[i]].pool_indice;
+            names[i] =  _pools[allPoolsIndices[i]].pool_name;
+            input_assets[i] = _pools[allPoolsIndices[i]].input_asset;
+            output_assets[i] = _pools[allPoolsIndices[i]].output_asset;
+            starts[i] = _pools[allPoolsIndices[i]].start_date;
+            ends[i] = _pools[allPoolsIndices[i]].end_date;
+        }
         return (indices, names, input_assets,
          output_assets, starts, ends);
     }
-    
+
 }
