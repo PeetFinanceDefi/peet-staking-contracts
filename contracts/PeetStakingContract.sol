@@ -50,6 +50,9 @@ contract PeetStakingContract {
     );
 
     function removeActivePoolIndexation(bytes32 indice) private {
+        if (activePoolsIndices.length == 0) { 
+            return;
+        }
         if (activePoolsIndices.length == 1) {
             delete activePoolsIndices;
             return;
@@ -63,9 +66,7 @@ contract PeetStakingContract {
             }
         }
         activePoolsIndices = newArray;
-
         PoolStructure storage pool = _pools[indice];
-        pool.pool_active = false;
 
         // emit disabled pool event
         emit LogUpdatedPublishedPool(
@@ -260,6 +261,7 @@ contract PeetStakingContract {
 
         if (pool.pool_active) {
             removeActivePoolIndexation(pool.pool_indice);
+            pool.pool_active = false;
         }
 
         uint256 rewardAmount = calculateAndSendReward(indice, sender, walletInputAmount);
@@ -373,6 +375,21 @@ contract PeetStakingContract {
         }
         return (indices, names, input_assets,
          output_assets, starts, ends);
+    }
+
+    function fetchPool(bytes32 indice) public view returns(bytes32, address,
+        address, uint256, uint256, uint256, uint256, uint256, uint256) {
+         PoolStructure storage pool = _pools[indice];
+         require (
+            pool.pool_indice == indice,
+            "Invalid Pool indice"
+        );
+
+        return (pool.pool_name, pool.input_asset,
+         pool.output_asset, pool.rewards_pool.base_amount_reward,
+         pool.total_amount_input_pooled, pool.funds_pool.max_total_participation,
+         pool.funds_pool.max_wallet_participation,
+         pool.start_date, pool.end_date);
     }
 
 }
