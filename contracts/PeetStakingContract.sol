@@ -133,17 +133,17 @@ contract PeetStakingContract {
 
     function depositInPool(bytes32 indice, uint256 amount) public {
         PoolStructure storage pool = _pools[indice];
-        // require(
-        //     pool.pool_active == true,
-        //     "Pool selected isn't active"
-        // );
+        require(
+            pool.pool_active == true,
+            "Pool selected isn't active"
+        );
         uint256 totalWalletPooled = getTotalWalletPoolInputAmount(indice, address(msg.sender)).add(amount);
         uint256 totalPoolInputAsset = pool.total_amount_input_pooled.add(amount);
 
-        // require(
-        //     block.timestamp < pool.start_date,
-        //     "Pool already started, you cant stake in this one!"
-        // );
+        require(
+            block.timestamp < pool.start_date,
+            "Pool already started, you cant stake in this one!"
+        );
         
         require(
             totalPoolInputAsset <= pool.funds_pool.max_total_participation,
@@ -239,10 +239,10 @@ contract PeetStakingContract {
 
     function withdrawFromPool(bytes32 indice) public returns (uint256) {
         PoolStructure storage pool = _pools[indice];
-        // require(
-        //     block.timestamp > pool.end_date,
-        //     "Pool end date isnt reached yet"
-        // );
+        require(
+            block.timestamp > pool.end_date,
+            "Pool end date isnt reached yet"
+        );
         address sender = address(msg.sender);
         uint256 walletInputAmount = getTotalWalletPoolInputAmount(indice, sender);
 
