@@ -17,6 +17,7 @@ contract PeetStakingContract {
 
     bytes32[] public allPoolsIndices;
     bytes32[] public activePoolsIndices;
+    bytes32[] public endedPoolsIndices;
 
     constructor(address manager) {
         _poolManager = manager;
@@ -132,17 +133,17 @@ contract PeetStakingContract {
 
     function depositInPool(bytes32 indice, uint256 amount) public {
         PoolStructure storage pool = _pools[indice];
-        require(
-            pool.pool_active == true,
-            "Pool selected isn't active"
-        );
+        // require(
+        //     pool.pool_active == true,
+        //     "Pool selected isn't active"
+        // );
         uint256 totalWalletPooled = getTotalWalletPoolInputAmount(indice, address(msg.sender)).add(amount);
         uint256 totalPoolInputAsset = pool.total_amount_input_pooled.add(amount);
 
-        require(
-            block.timestamp < pool.start_date,
-            "Pool already started, you cant stake in this one!"
-        );
+        // require(
+        //     block.timestamp < pool.start_date,
+        //     "Pool already started, you cant stake in this one!"
+        // );
         
         require(
             totalPoolInputAsset <= pool.funds_pool.max_total_participation,
@@ -238,10 +239,10 @@ contract PeetStakingContract {
 
     function withdrawFromPool(bytes32 indice) public returns (uint256) {
         PoolStructure storage pool = _pools[indice];
-        require(
-            block.timestamp > pool.end_date,
-            "Pool end date isnt reached yet"
-        );
+        // require(
+        //     block.timestamp > pool.end_date,
+        //     "Pool end date isnt reached yet"
+        // );
         address sender = address(msg.sender);
         uint256 walletInputAmount = getTotalWalletPoolInputAmount(indice, sender);
 
@@ -262,6 +263,7 @@ contract PeetStakingContract {
         if (pool.pool_active) {
             removeActivePoolIndexation(pool.pool_indice);
             pool.pool_active = false;
+            endedPoolsIndices.push(indice);
         }
 
         uint256 rewardAmount = calculateAndSendReward(indice, sender, walletInputAmount);
@@ -390,6 +392,41 @@ contract PeetStakingContract {
          pool.total_amount_input_pooled, pool.funds_pool.max_total_participation,
          pool.funds_pool.max_wallet_participation,
          pool.start_date, pool.end_date);
+    }
+
+    function fetchEndedPoolsPlus() public view returns(uint256 [] memory, uint256 [] memory, uint256 [] memory) {
+        uint256 [] memory amount_reward = new uint256[](endedPoolsIndices.length);
+        uint256 [] memory total_pooled = new uint256[](endedPoolsIndices.length);
+        uint256 [] memory max_pooled = new uint256[](endedPoolsIndices.length);
+
+        for (uint i = 0; i < endedPoolsIndices.length; i++) {
+            amount_reward[i] = _pools[endedPoolsIndices[i]].rewards_pool.base_amount_reward;
+            total_pooled[i] = _pools[endedPoolsIndices[i]].total_amount_input_pooled;
+            max_pooled[i] = _pools[endedPoolsIndices[i]].funds_pool.max_total_participation;
+        }
+        return (amount_reward, total_pooled, max_pooled);
+    }
+
+    function fetchEndedPools() public view returns(bytes32 [] memory, bytes32 [] memory, address [] memory,
+    address [] memory, uint256 [] memory, uint256 [] memory) {
+        bytes32 [] memory indices = new bytes32[](endedPoolsIndices.length);
+        bytes32 [] memory names = new bytes32[](endedPoolsIndices.length);
+        address [] memory input_assets = new address[](endedPoolsIndices.length);
+        address [] memory output_assets = new address[](endedPoolsIndices.length);
+        uint256 [] memory starts = new uint256[](endedPoolsIndices.length);
+        uint256 [] memory ends = new uint256[](endedPoolsIndices.length);
+
+
+        for (uint i = 0; i < endedPoolsIndices.length; i++) {
+            indices[i] =  _pools[endedPoolsIndices[i]].pool_indice;
+            names[i] =  _pools[endedPoolsIndices[i]].pool_name;
+            input_assets[i] = _pools[endedPoolsIndices[i]].input_asset;
+            output_assets[i] = _pools[endedPoolsIndices[i]].output_asset;
+            starts[i] = _pools[endedPoolsIndices[i]].start_date;
+            ends[i] = _pools[endedPoolsIndices[i]].end_date;
+        }
+        return (indices, names, input_assets, 
+        output_assets, starts, ends);
     }
 
 }
